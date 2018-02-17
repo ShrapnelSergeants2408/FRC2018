@@ -118,17 +118,39 @@ public class Robot extends IterativeRobot {
 	public void autonomousPeriodic() {
 		switch (m_autoSelected) {
 			case LeftLine:
-				
+				if(m_timer.get() < 4) {
+					frontLeft.set(1);
+					backLeft.set(1);
+					frontRight.set(1);
+					backRight.set(1);
+				} else {
+					frontLeft.stopMotor();
+					backLeft.stopMotor();
+					frontRight.stopMotor();
+					backRight.stopMotor();
+				}
 			break;
 			case RightLine:
-			
+				if(m_timer.get() < 4) {
+					frontLeft.set(1);
+					backLeft.set(1);
+					frontRight.set(1);
+					backRight.set(1);
+				} else {
+					frontLeft.stopMotor();
+					backLeft.stopMotor();
+					frontRight.stopMotor();
+					backRight.stopMotor();
+				}
 				break;
 			case kCustomAuto:
-				// Put custom auto code here
+				System.out.println("MEMES");
+				System.out.println("ARE DREAMS");
 				break;
 			case kDefaultAuto:
 			default:
-				// Put default auto code here
+				System.out.println("MEMES");
+				System.out.println("ARE DREAMS");
 				break;
 		}
 	}
