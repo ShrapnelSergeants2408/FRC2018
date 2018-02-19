@@ -13,12 +13,19 @@ import edu.wpi.first.wpilibj.DoubleSolenoid;
 import edu.wpi.first.wpilibj.Encoder;
 import edu.wpi.first.wpilibj.IterativeRobot;
 import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.PIDController;
+import edu.wpi.first.wpilibj.PIDOutput;
 import edu.wpi.first.wpilibj.Spark;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.DoubleSolenoid.Value;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj.SPI;
+import edu.wpi.first.wpilibj.SerialPort;
+import java.math.*;
 
+import com.kauailabs.navx.frc.AHRS;
 /**
  * The VM is configured to automatically run this class, and to call the
  * functions corresponding to each mode, as described in the IterativeRobot
@@ -26,14 +33,39 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
  * creating this project, you must also update the build.properties file in the
  * project.
  */
-public class Robot extends IterativeRobot {
-	private static final String RightLine = "Right Line";
-	private static final String LeftLine = "Left Line";
+public class Robot extends IterativeRobot implements PIDOutput {
+	private static final int posGround = 0;
+	private static final int posSwitch = 45;
+	private static final int posScale = 90;
+	
+	private static final String RightStart = "Right Start";
+	private static final String LeftStart = "Left Start";
+	private static final String MiddleStart = "Middle Start";
 	private static final String kDefaultAuto = "Default";
 	private static final String kCustomAuto = "My Auto";
+	private static double armP = 0.0;
+	private static double armI = 0.0;
+	private static double armD = 0.0;
+	
+	private static double driveP = 0.0;
+	private static double driveI = 0.0;
+	private static double driveD = 0.0;
+	
+	private static double angleP = 0.0;
+	private static double angleI = 0.0;
+	private static double angleD = 0.0;
+	
 	private String m_autoSelected;
 	private SendableChooser<String> m_chooser = new SendableChooser<>();
 	private Timer m_timer = new Timer();
+	private PIDController armPID;
+	private PIDController frontLeftPID;
+	private PIDController backLeftPID;
+	private PIDController frontRightPID;
+	private PIDController backRightPID;
+	private PIDController navXPID;
+	
+	public AHRS ahrs;
 
 	//Speed Controller Initialization 
 	//Drive Motors
@@ -49,10 +81,10 @@ public class Robot extends IterativeRobot {
 	
 	//Encoders
 	//Drive System
-	Encoder RightEnc = new Encoder(0, 1);
-	Encoder LeftEnc = new Encoder(2,3);
+	Encoder rightEnc = new Encoder(0, 1);
+	Encoder leftEnc = new Encoder(2,3);
 	//Arm System
-	Encoder ArmEnc = new Encoder(4,5);
+	Encoder armEnc = new Encoder(4,5);
 	
 	//Pneumatics Control Module
 	Compressor pow = new Compressor(0);
@@ -72,8 +104,9 @@ public class Robot extends IterativeRobot {
 		//Autonomous Selection
 		m_chooser.addDefault("Default Auto", kDefaultAuto);
 		m_chooser.addObject("My Auto", kCustomAuto);
-		m_chooser.addObject("Right Line", RightLine);
-		m_chooser.addObject("Left Line", LeftLine);
+		m_chooser.addObject("Right Line", RightStart);
+		m_chooser.addObject("Left Line", LeftStart);
+		m_chooser.addObject("Middle Start", MiddleStart);
 		SmartDashboard.putData("Auto choices", m_chooser);
 		
 		//Motor Direction
@@ -86,6 +119,35 @@ public class Robot extends IterativeRobot {
 		//Cylinder Position
 		intake.set(Value.kReverse);
 		grabber.set(Value.kReverse);
+		armPID = new PIDController(armP, armI, armD, armEnc, armMotor);
+		armPID.setOutputRange(-.7, .7);
+		
+		//NavX Initialization via USB
+		try {
+        ahrs = new AHRS(SerialPort.Port.kUSB);
+		} catch (RuntimeException ex ) {
+        DriverStation.reportError("Error instantiating navX MXP:  " + ex.getMessage(), true);
+		}
+		
+		frontLeftPID = new PIDController(driveP, driveI, driveD, leftEnc, frontLeft);
+		frontLeftPID.setOutputRange(-1, 1);
+		backLeftPID = new PIDController(driveP, driveI, driveD, leftEnc, backLeft);
+		backLeftPID.setOutputRange(-1, 1);
+		frontRightPID = new PIDController(driveP, driveI, driveD, rightEnc, frontRight);
+		frontRightPID.setOutputRange(-1, 1);
+		backRightPID = new PIDController(driveP, driveI, driveD, rightEnc, backRight);
+		backRightPID.setOutputRange(-1, 1);
+		
+		navXPID = new PIDController(angleP, angleI, angleD, ahrs, this);
+		navXPID.setOutputRange(-1, 1);
+		navXPID.setInputRange(-180, 180);
+		navXPID.setContinuous(true);
+		
+		
+		ahrs.reset();
+		SmartDashboard.putString("OUR SWITCH IS ", isOursLeft(0)? "LEFT":"RIGHT");
+		SmartDashboard.putString("OUR SCALE IS ", isOursLeft(1)? "LEFT":"RIGHT");
+		SmartDashboard.putString("THEIR SWITCH IS ", isOursLeft(2)? "LEFT":"RIGHT");
 	}
 
 	/**
@@ -117,30 +179,64 @@ public class Robot extends IterativeRobot {
 	@Override
 	public void autonomousPeriodic() {
 		switch (m_autoSelected) {
-			case LeftLine:
-				if(m_timer.get() < 4) {
-					frontLeft.set(1);
-					backLeft.set(1);
-					frontRight.set(1);
-					backRight.set(1);
+			case LeftStart:
+				if(isOursLeft(0)) {
+					driveStraight(133);
+					armCommand(posSwitch);
+					turnSystem(90);
+					driveStraight(37.5);
+					grabRelease(true);
+				} else if(isOursLeft(1)) {
+					driveStraight(318);
+					armCommand(posScale);
+					turnSystem(90);
+					driveStraight(10);
+					grabRelease(true);
 				} else {
-					frontLeft.stopMotor();
-					backLeft.stopMotor();
-					frontRight.stopMotor();
-					backRight.stopMotor();
+					driveStraight(150);
 				}
-			break;
-			case RightLine:
-				if(m_timer.get() < 4) {
-					frontLeft.set(1);
-					backLeft.set(1);
-					frontRight.set(1);
-					backRight.set(1);
+				break;
+			case MiddleStart:
+				if(isOursLeft(0)) {
+					driveStraight(50);
+					turnSystem(-90);
+					driveStraight(131);
+					turnSystem(0);
+					driveStraight(94);
+					armCommand(posSwitch);
+					turnSystem(90);
+					driveStraight(10);
 				} else {
-					frontLeft.stopMotor();
-					backLeft.stopMotor();
-					frontRight.stopMotor();
-					backRight.stopMotor();
+					driveStraight(50);
+					turnSystem(90);
+					driveStraight(60);
+					turnSystem(0);
+					armCommand(posSwitch);
+					driveStraight(55);
+					turnSystem(-90);
+					driveStraight(10);
+					grabRelease(true);
+				}
+				
+				
+				
+				
+				break;
+			case RightStart:
+				if(!isOursLeft(0)) {
+					driveStraight(133);
+					armCommand(posSwitch);
+					turnSystem(-90);
+					driveStraight(37.5);
+					grabRelease(true);
+				} else if(!isOursLeft(1)) {
+					driveStraight(318);
+					armCommand(posScale);
+					turnSystem(-90);
+					driveStraight(10);
+					grabRelease(true);
+				} else {
+					driveStraight(150);
 				}
 				break;
 			case kCustomAuto:
@@ -166,9 +262,9 @@ public class Robot extends IterativeRobot {
 		double leftY = leftJoystick.getY();
 		
 		//Data output for encoders
-		SmartDashboard.putNumber("Right", RightEnc.getRaw());
-		SmartDashboard.putNumber("Left", LeftEnc.getRaw());
-		SmartDashboard.putNumber("Arm", ArmEnc.getRaw());
+		SmartDashboard.putNumber("Right", rightEnc.getRaw());
+		SmartDashboard.putNumber("Left", leftEnc.getRaw());
+		SmartDashboard.putNumber("Arm", armEnc.getRaw());
 		
 		//Intake Motor Protocol
 		if(utility.getRawButton(8)) {
@@ -188,11 +284,28 @@ public class Robot extends IterativeRobot {
 			intake.set(Value.kReverse);
 		}
 		
+		//Grabber Pistons
+		if(utility.getRawButton(10)) {
+			grabber.set(Value.kForward);
+		} else if(utility.getRawButton(11)) {
+			grabber.set(Value.kReverse);
+		}
+		
 		//Tank Drive
 		frontRight.set(rightY);
 		backRight.set(rightY);
 		frontLeft.set(leftY);
 		backLeft.set(leftY);
+		
+		//Arm Logic
+		if(utility.getPOV() == 180) {
+			armCommand(posScale);
+		} else if (utility.getPOV() == 90) {
+			armCommand(posSwitch);
+		} else if (utility.getPOV() == 0) {
+			armCommand(posGround);
+		}
+		
 		
 	}
 
@@ -202,4 +315,70 @@ public class Robot extends IterativeRobot {
 	@Override
 	public void testPeriodic() {
 	}
+	
+	public void armCommand(int armAngle) {
+		double SetpointAngle = ((1024.0 *5 )/360) * armAngle;
+		armPID.setSetpoint(SetpointAngle);
+	}
+	
+	public void driveStraight(double Distance) {
+		frontRightPID.enable();
+		frontLeftPID.enable();
+		backRightPID.enable();
+		backLeftPID.enable();
+		rightEnc.reset();
+		leftEnc.reset();
+		double pulsePerInch = 1440.0 /(Math.PI * 6);
+		double driveSetpoint = pulsePerInch * Distance;
+		frontRightPID.setSetpoint(driveSetpoint);
+		backRightPID.setSetpoint(driveSetpoint);
+		frontLeftPID.setSetpoint(driveSetpoint);
+		backLeftPID.setSetpoint(driveSetpoint);
+		while (Math.abs(frontLeftPID.getError()) > 5 && Math.abs(frontRightPID.getError()) > 5) {
+			Timer.delay(.015);
+		}
+		frontRightPID.disable();
+		frontLeftPID.disable();
+		backRightPID.disable();
+		backLeftPID.disable();
+	}
+	
+	public void turnSystem(double fieldDeg) {
+		navXPID.enable();
+		navXPID.setSetpoint(fieldDeg);
+		while (Math.abs(navXPID.getError()) > 5) {
+			Timer.delay(.015);
+		}
+		navXPID.disable();
+	}
+	
+	public void grabRelease(boolean isReleased) {
+		if(isReleased) {
+			grabber.set(Value.kForward);
+			Timer.delay(.5);
+		} else {
+			grabber.set(Value.kReverse);
+			Timer.delay(.5);
+		}
+	}
+	
+	public boolean isOursLeft(int dexOne) {
+		String gameData;
+		gameData = DriverStation.getInstance().getGameSpecificMessage();
+		if(gameData.charAt(dexOne) == 'L') {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	@Override
+	public void pidWrite(double output) {
+		// TODO Auto-generated method stub
+		frontRight.set(output);
+		backRight.set(output);
+		frontLeft.set(output);
+		backLeft.set(output);
+	}
+	
 }
