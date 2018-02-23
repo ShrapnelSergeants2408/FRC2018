@@ -25,6 +25,7 @@ import edu.wpi.first.wpilibj.SPI;
 import edu.wpi.first.wpilibj.SerialPort;
 import java.math.*;
 
+import com.ctre.phoenix.motorcontrol.can.TalonSRX;
 import com.kauailabs.navx.frc.AHRS;
 /**
  * The VM is configured to automatically run this class, and to call the
@@ -84,13 +85,13 @@ public class Robot extends IterativeRobot implements PIDOutput {
 	Encoder rightEnc = new Encoder(0, 1);
 	Encoder leftEnc = new Encoder(2,3);
 	//Arm System
-	Encoder armEnc = new Encoder(4,5);
+
 	
 	//Pneumatics Control Module
 	Compressor pow = new Compressor(0);
 	//Intake Mechanism
 	DoubleSolenoid grabber = new DoubleSolenoid(0, 1);
-	DoubleSolenoid intake = new DoubleSolenoid(2, 3);
+	DoubleSolenoid intake = new DoubleSolenoid(6, 7);
 	
 	//Joystick Initialization
 	//Driver 1
@@ -110,8 +111,10 @@ public class Robot extends IterativeRobot implements PIDOutput {
 		SmartDashboard.putData("Auto choices", m_chooser);
 		
 		//Motor Direction
-		frontLeft.setInverted(true);
-		backLeft.setInverted(true);
+		frontRight.setInverted(true);
+		backRight.setInverted(true);
+		
+		shootLeft.setInverted(true);
 		
 		//USB Camera Initialization
 		CameraServer.getInstance().startAutomaticCapture();
@@ -119,8 +122,8 @@ public class Robot extends IterativeRobot implements PIDOutput {
 		//Cylinder Position
 		intake.set(Value.kReverse);
 		grabber.set(Value.kReverse);
-		armPID = new PIDController(armP, armI, armD, armEnc, armMotor);
-		armPID.setOutputRange(-.7, .7);
+		//armPID = new PIDController(armP, armI, armD, armEnc, armMotor.);
+		//armPID.setOutputRange(-.7, .7);
 		
 		//NavX Initialization via USB
 		try {
@@ -182,13 +185,13 @@ public class Robot extends IterativeRobot implements PIDOutput {
 			case LeftStart:
 				if(isOursLeft(0)) {
 					driveStraight(133);
-					armCommand(posSwitch);
+					//armCommand(posSwitch);
 					turnSystem(90);
 					driveStraight(37.5);
 					grabRelease(true);
 				} else if(isOursLeft(1)) {
 					driveStraight(318);
-					armCommand(posScale);
+					//armCommand(posScale);
 					turnSystem(90);
 					driveStraight(10);
 					grabRelease(true);
@@ -203,7 +206,7 @@ public class Robot extends IterativeRobot implements PIDOutput {
 					driveStraight(131);
 					turnSystem(0);
 					driveStraight(94);
-					armCommand(posSwitch);
+					//armCommand(posSwitch);
 					turnSystem(90);
 					driveStraight(10);
 				} else {
@@ -211,7 +214,7 @@ public class Robot extends IterativeRobot implements PIDOutput {
 					turnSystem(90);
 					driveStraight(60);
 					turnSystem(0);
-					armCommand(posSwitch);
+					//armCommand(posSwitch);
 					driveStraight(55);
 					turnSystem(-90);
 					driveStraight(10);
@@ -225,13 +228,13 @@ public class Robot extends IterativeRobot implements PIDOutput {
 			case RightStart:
 				if(!isOursLeft(0)) {
 					driveStraight(133);
-					armCommand(posSwitch);
+					//armCommand(posSwitch);
 					turnSystem(-90);
 					driveStraight(37.5);
 					grabRelease(true);
 				} else if(!isOursLeft(1)) {
 					driveStraight(318);
-					armCommand(posScale);
+					//armCommand(posScale);
 					turnSystem(-90);
 					driveStraight(10);
 					grabRelease(true);
@@ -264,15 +267,14 @@ public class Robot extends IterativeRobot implements PIDOutput {
 		//Data output for encoders
 		SmartDashboard.putNumber("Right", rightEnc.getRaw());
 		SmartDashboard.putNumber("Left", leftEnc.getRaw());
-		SmartDashboard.putNumber("Arm", armEnc.getRaw());
 		
 		//Intake Motor Protocol
 		if(utility.getRawButton(8)) {
-			shootLeft.set(1);
-			shootRight.set(1);
+			shootLeft.set(.4);
+			shootRight.set(.4);
 		} else if(utility.getRawButton(9)) {
-			shootLeft.set(-1);
-			shootRight.set(-1);
+			shootLeft.set(-.4);
+			shootRight.set(-.4);
 		} else {
 			shootLeft.set(0);
 			shootRight.set(0);
@@ -297,14 +299,23 @@ public class Robot extends IterativeRobot implements PIDOutput {
 		frontLeft.set(leftY);
 		backLeft.set(leftY);
 		
-		//Arm Logic
-		if(utility.getPOV() == 180) {
-			armCommand(posScale);
-		} else if (utility.getPOV() == 90) {
-			armCommand(posSwitch);
-		} else if (utility.getPOV() == 0) {
-			armCommand(posGround);
+		if(utility.getRawButton(3)) {
+			armMotor.set(.4);
+		} else if(utility.getRawButton(2)) {
+			armMotor.set(-.4);
+		} else {
+			armMotor.set(0);
 		}
+		
+		
+		//Arm Logic
+		//if(utility.getPOV() == 180) {
+			//armCommand(posScale);
+		//} else if (utility.getPOV() == 90) {
+			//armCommand(posSwitch);
+		//} else if (utility.getPOV() == 0) {
+			//armCommand(posGround);
+		//}
 		
 		
 	}
@@ -316,10 +327,6 @@ public class Robot extends IterativeRobot implements PIDOutput {
 	public void testPeriodic() {
 	}
 	
-	public void armCommand(int armAngle) {
-		double SetpointAngle = ((1024.0 *5 )/360) * armAngle;
-		armPID.setSetpoint(SetpointAngle);
-	}
 	
 	public void driveStraight(double Distance) {
 		frontRightPID.enable();
